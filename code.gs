@@ -6,6 +6,7 @@ function onOpen() {
     .addItem('Maak facturen met factuurnummers', 'createAllInvoices')
     .addItem('Maak voldane facturen', 'createPaidInvoices')
     .addItem('Maak niet voldane facturen', 'createUnpaidInvoices')
+    .addItem('Maak herinnering facturen', 'createReminderInvoices')
     .addSeparator()
     .addItem('Maak etiketten', 'createAddressLabels')
     .addItem('Maak bedankstikkers', 'createThankYouNotes')
@@ -21,13 +22,15 @@ function getPageInfo() {
     factor: 6,
     bcc: 'mastersofkyokushin@gmail.com',
     subjectPostfix: ' sponsoring Masters of Kyokushin Gala 2018',
-    bodyStartText: 'Geachte sponsor,'
+    bodyStartText: 'Geachte sponsor,',
+    paymentTerm: 14
   };
 }
 
 function createAllInvoices() { logFactuurNummers({paid:true,unpaid:true}); }
 function createPaidInvoices() { logFactuurNummers({paid:true}); }
 function createUnpaidInvoices() { logFactuurNummers({unpaid:true}); }
+function createReminderInvoices() { logFactuurNummers({overdue:true}); }
 function createFromCurrentRow() { 
   var sheet = SpreadsheetApp.getActiveSheet();
   createInvoiceRow(sheet.getRange(sheet.getActiveRange().getRow(), 1, 1, 10).getValues(), {paid:true,unpaid:true}, 0); 
@@ -109,7 +112,7 @@ function activateRow(row) {
 function createInvoiceRow(data, flags, i) {
   activateRow(i + 1);
   var info = getRowInfo(data[i]);
-  if ((info.betaald > 0 && flags.paid) || (info.betaald == 0 && flags.unpaid))
+  if ((info.betaald > 0 && flags.paid) || (info.betaald == 0 && flags.unpaid) || (info.dagenOpenstaand > getPageInfo().paymentTerm && flags.overdue))
     createPdf(info);
 }
 
@@ -126,6 +129,7 @@ function createPdf(info) {
   copyBody.replaceText('{adres}', info.adres);
   copyBody.replaceText('{postcode, plaats}', info.pcStad);
   copyBody.replaceText('{bedrag}', info.bedrag);
+  copyBody.replaceText('{datum}', formatDate(info.datum));
   copyDocument.saveAndClose();
   
   var copyBlob = copyDoc.getAs('application/pdf').setName(info.factuurnummer + ' ' + info.naam + '.pdf');
@@ -133,9 +137,14 @@ function createPdf(info) {
   var text = body.substring(body.indexOf(info.bodyStartText));
   var pageInfo = getPageInfo();
   var flags = { attachments: [copyBlob], bcc: pageInfo.bcc };
-  GmailApp.createDraft(info.email, 'Factuur ' + info.factuurnummer + pageInfo.subjectPostfix, text, flags);
+  var subjectPrefix = info.dagenOpenstaand > getPageInfo().paymentTerm ? 'Herinnering factuur ' : 'Factuur ';
+  GmailApp.createDraft(info.email, subjectPrefix + info.factuurnummer + pageInfo.subjectPostfix, text, flags);
   
   copyDoc.setTrashed(true);
+}
+
+function formatDate(date) {
+  return date.getDate() + '-' + (1 + date.getMonth()) + '-' + date.getFullYear();
 }
 
 function getRowInfo(row) {
@@ -148,7 +157,9 @@ function getRowInfo(row) {
     tav: row[4],
     email: row[5],
     bedrag: row[6],
-    sjabloon: row[7] > 0 ? 'Factuur Voldaan Sjabloon' : 'Factuur Sjabloon',
+	datum: row[8],
+    dagenOpenstaand: row[9],
+    sjabloon: row[7] > 0 ? 'Factuur Voldaan Sjabloon' : row[9] > getPageInfo().paymentTerm ? 'Factuur Herinnering Sjabloon' : 'Factuur Sjabloon',
   };
 }
 
