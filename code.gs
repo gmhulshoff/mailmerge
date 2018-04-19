@@ -11,6 +11,8 @@ function onOpen() {
     .addItem('Maak etiketten', 'createAddressLabels')
     .addItem('Maak bedankstikkers', 'createThankYouNotes')
     .addItem('Maak infoStikkers', 'createInfoNotes')
+    .addSeparator()
+    .addItem('Run tests', 'runTests')
     .addToUi();
 }
 
@@ -23,30 +25,27 @@ function getPageInfo() {
     bcc: 'mastersofkyokushin@gmail.com',
     subjectPostfix: ' sponsoring Masters of Kyokushin Gala 2018',
     bodyStartText: 'Geachte sponsor,',
-    paymentTerm: 14
+    thankYouText: 'Dank voor uw sponsorbijdrage. Wij stellen uw bijdrage zeer op prijs en hopen u volgend jaar weer te mogen verwelkomen als sponsor!',
+    infoText: 'Geachte sponsor, bijgevoegd uw toegangskaarten. Als u meer nodig heeft, kunt u altijd contact met ons opnemen.',
+    paymentTerm: 14,
+    maxDataColumn: 10
   };
 }
 
-function createAllInvoices() { logFactuurNummers({paid:true,unpaid:true}); }
-function createPaidInvoices() { logFactuurNummers({paid:true}); }
-function createUnpaidInvoices() { logFactuurNummers({unpaid:true}); }
-function createReminderInvoices() { logFactuurNummers({overdue:true}); }
+function createAllInvoices() { createInvoices({paid:true,unpaid:true}); }
+function createPaidInvoices() { createInvoices({paid:true}); }
+function createUnpaidInvoices() { createInvoices({unpaid:true}); }
+function createReminderInvoices() { createInvoices({overdue:true}); }
+function createThankYouNotes() { createTextNotes('Bedankjes', getPageInfo().thankYouText); }
+function createInfoNotes() { createTextNotes('Info', getPageInfo().infoText); }
 function createFromCurrentRow() { 
   var sheet = SpreadsheetApp.getActiveSheet();
-  createInvoiceRow(sheet.getRange(sheet.getActiveRange().getRow(), 1, 1, 10).getValues(), {paid:true,unpaid:true}, 0); 
-}
-
-function createThankYouNotes() {
-  createTextNotes('Bedankjes', 'Dank voor uw sponsorbijdrage. Wij stellen uw bijdrage zeer op prijs en hopen u volgend jaar weer te mogen verwelkomen als sponsor!');
-}
-
-function createInfoNotes() {
-  createTextNotes('Info', 'Geachte sponsor, bijgevoegd uw toegangskaarten. Als u meer nodig heeft, kunt u altijd contact met ons opnemen.');
+  createInvoice(sheet.getRange(sheet.getActiveRange().getRow(), 1, 1, getPageInfo().maxDataColumn).getValues(), {paid:true,unpaid:true}, 0); 
 }
 
 function createAddressLabels() {
   var getText = function (page, row, column, pageInfo, data) { 
-    var index = 1 + page * pageInfo.rows * pageInfo.columns + row * pageInfo.columns + column;
+    var index = getDataIndex(pageInfo, page, row, column);
     return index < data.length ? getLabel(getRowInfo(data[index])) : null;
   }
   createGrid('Etiketten', getText);
@@ -58,10 +57,14 @@ function getLabel(info) {
 
 function createTextNotes(name, text) {
   var getText = function (page, row, column, pageInfo, data) { 
-    var index = 1 + page * pageInfo.rows * pageInfo.columns + row * pageInfo.columns + column;
+    var index = getDataIndex(pageInfo, page, row, column);
     return index < data.length ? text : null;
   }
   createGrid(name, getText);
+}
+
+function getDataIndex(pageInfo, page, row, column) {
+  return 1 + page * pageInfo.rows * pageInfo.columns + row * pageInfo.columns + column;
 }
 
 function createGrid(name, getText) {
@@ -96,10 +99,10 @@ function createLabelRow(body, page, data, row, table, pageInfo, getText) {
   }
 }
 
-function logFactuurNummers(flags) {
+function createInvoices(flags) {
   var data = SpreadsheetApp.getActiveSheet().getDataRange().getValues();
   for (var i = 1; i < data.length; i++)
-    createInvoiceRow(data, flags, i);
+    createInvoice(data, flags, i);
   activateRow(2);
 }
 
@@ -109,14 +112,14 @@ function activateRow(row) {
   SpreadsheetApp.flush();
 }
 
-function createInvoiceRow(data, flags, i) {
+function createInvoice(data, flags, i) {
   activateRow(i + 1);
   var info = getRowInfo(data[i]);
   if ((info.betaald > 0 && flags.paid) || (info.betaald == 0 && flags.unpaid) || (info.dagenOpenstaand > getPageInfo().paymentTerm && flags.overdue))
-    createPdf(info);
+    createInvoiceDraft(info);
 }
 
-function createPdf(info) {
+function createInvoiceDraft(info) {
   if (info.factuurnummer == '') return;
   var doc = getTemplateDoc(info.sjabloon);
   var copyDoc = doc.makeCopy();
@@ -168,4 +171,21 @@ function getTemplateDoc(name) {
   while (files.hasNext())
     return files.next();
   return null;
+}
+
+function runTests() {
+  var info = {rows:9, columns:4};
+  var html = 
+      '<div style=\"background-color: blue;color:white;\">info={rows:9, columns:4}</div>' +
+      tester('getDataIndex(info, 0, 0, 0)', getDataIndex(info, 0, 0, 0), 1) +
+      tester('getDataIndex(info, 0, 0, 1)', getDataIndex(info, 0, 0, 1), 2) +
+      tester('getDataIndex(info, 0, 1, 0)', getDataIndex(info, 0, 1, 0), 5) +
+      tester('getDataIndex(info, 1, 0, 0)', getDataIndex(info, 1, 0, 0), 37);
+  SpreadsheetApp.getUi().showSidebar(HtmlService.createHtmlOutput(html).setTitle('Tests'));
+}
+
+function tester(text, result, expected) {
+  if (result == expected)
+    return '<div style=\"color: white;background-color:green;\">' + text + ' == ' + expected + '</div>';
+  return '<div style=\"color: white;background-color:red;\">' + text + ' == ' + expected + ' but got ' + result + '</div>';
 }
